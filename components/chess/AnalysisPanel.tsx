@@ -4,6 +4,7 @@ import { Move } from "chess.js";
 import { EngineEvaluation, MoveQuality, UserMoveCategory, EvaluatedMove } from "@/lib/chess/engine";
 import { ChessOpening } from "@/lib/chess/openings";
 import { CATEGORY_CONFIG } from "./GameReviewScorecard";
+import { MoveSticker } from "./MoveSticker";
 import {
   Sparkles,
   TrendingUp,
@@ -18,6 +19,7 @@ import {
   Copy,
   Check,
   BarChart3,
+  Tag,
 } from "lucide-react";
 
 interface AnalysisPanelProps {
@@ -32,6 +34,8 @@ interface AnalysisPanelProps {
   onJumpToMove: (index: number) => void;
   showBestMoveArrow: boolean;
   onToggleArrow: () => void;
+  showStickers?: boolean;
+  onToggleStickers?: () => void;
   fen: string;
 }
 
@@ -47,6 +51,8 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   onJumpToMove,
   showBestMoveArrow,
   onToggleArrow,
+  showStickers = true,
+  onToggleStickers,
   fen,
 }) => {
   const [copiedFen, setCopiedFen] = React.useState(false);
@@ -111,6 +117,21 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span>복기 통계</span>
+              </button>
+            )}
+
+            {onToggleStickers && (
+              <button
+                onClick={onToggleStickers}
+                className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors cursor-pointer border ${
+                  showStickers
+                    ? "bg-zinc-800 border-zinc-700 text-cyan-400"
+                    : "bg-zinc-800/50 border-zinc-800 text-zinc-500"
+                }`}
+                title="Chess.com 스티커 표시/숨기기"
+              >
+                <Tag className="w-3.5 h-3.5" />
+                <span className="text-[10px] hidden sm:inline">스티커</span>
               </button>
             )}
 
@@ -198,7 +219,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                 <span
                   className={`text-xs font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 ${conf.badgeColor} ${conf.textColor} ${conf.borderColor}`}
                 >
-                  <span className="font-mono text-[10px]">{conf.icon}</span>
+                  <MoveSticker category={last6TierCategory} size="xs" />
                   <span className="capitalize">{conf.label}</span>
                   <span className="text-[10px] text-zinc-400 font-normal">({conf.labelKo})</span>
                 </span>
@@ -224,8 +245,6 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             movePairs.map((pair) => {
               const whiteEval = evaluatedMoves[pair.whiteIdx];
               const blackEval = evaluatedMoves[pair.blackIdx];
-              const whiteConf = whiteEval ? CATEGORY_CONFIG[whiteEval.category] : null;
-              const blackConf = blackEval ? CATEGORY_CONFIG[blackEval.category] : null;
 
               return (
                 <div key={pair.number} className="flex items-center py-1 px-1.5 hover:bg-zinc-800/40 rounded-sm">
@@ -241,13 +260,12 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                     }`}
                   >
                     <span>{pair.white?.san}</span>
-                    {whiteConf && (
-                      <span
-                        className={`text-[9px] font-bold px-1 py-0.2 rounded-xs border ${whiteConf.badgeColor} ${whiteConf.textColor} ${whiteConf.borderColor}`}
-                        title={`${whiteConf.label} (${whiteConf.labelKo})`}
-                      >
-                        {whiteConf.icon}
-                      </span>
+                    {whiteEval && (
+                      <MoveSticker
+                        category={whiteEval.category}
+                        size="xs"
+                        showTooltip={true}
+                      />
                     )}
                   </button>
 
@@ -262,13 +280,12 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                       }`}
                     >
                       <span>{pair.black.san}</span>
-                      {blackConf && (
-                        <span
-                          className={`text-[9px] font-bold px-1 py-0.2 rounded-xs border ${blackConf.badgeColor} ${blackConf.textColor} ${blackConf.borderColor}`}
-                          title={`${blackConf.label} (${blackConf.labelKo})`}
-                        >
-                          {blackConf.icon}
-                        </span>
+                      {blackEval && (
+                        <MoveSticker
+                          category={blackEval.category}
+                          size="xs"
+                          showTooltip={true}
+                        />
                       )}
                     </button>
                   ) : (

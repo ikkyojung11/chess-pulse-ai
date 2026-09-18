@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Chess, Move } from "chess.js";
+import { Chess, Move, Square } from "chess.js";
 import confetti from "canvas-confetti";
 import {
   StockfishEngine,
@@ -22,6 +22,7 @@ import { GameControls, GameMode, BotDifficulty } from "@/components/chess/GameCo
 import { SavedGamesModal } from "@/components/chess/SavedGamesModal";
 import { ChesscomImportModal, ChesscomGameItem } from "@/components/chess/ChesscomImportModal";
 import { GameReviewScorecard } from "@/components/chess/GameReviewScorecard";
+import { MoveSticker, CHESSCOM_STICKER_CONFIG } from "@/components/chess/MoveSticker";
 import { soundManager } from "@/lib/audio/sounds";
 import { supabase } from "@/lib/supabase/client";
 import {
@@ -36,6 +37,7 @@ import {
   ChevronLeft,
   ChevronRight,
   BarChart3,
+  Tag,
 } from "lucide-react";
 
 export default function Home() {
@@ -47,6 +49,7 @@ export default function Home() {
   // Engine state
   const [evaluation, setEvaluation] = useState<EngineEvaluation | null>(null);
   const [showBestMoveArrow, setShowBestMoveArrow] = useState<boolean>(true);
+  const [showStickers, setShowStickers] = useState<boolean>(true);
   const [lastMoveQuality, setLastMoveQuality] = useState<MoveQuality | null>(null);
   const [last6TierCategory, setLast6TierCategory] = useState<UserMoveCategory | null>(null);
   const [opening, setOpening] = useState<ChessOpening | null>(null);
@@ -506,6 +509,14 @@ export default function Home() {
     }
   };
 
+  // Active move & Chess.com sticker on board
+  const activeMove = currentMoveIndex >= 0 ? moves[currentMoveIndex] : null;
+  const activeEvaluated = currentMoveIndex >= 0 ? evaluatedMoves[currentMoveIndex] : null;
+  const currentStickerCategory =
+    activeEvaluated?.category ||
+    (currentMoveIndex === moves.length - 1 ? last6TierCategory : null);
+  const currentStickerSquare = activeMove ? (activeMove.to as Square) : null;
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
       {/* Top Navbar */}
@@ -593,6 +604,9 @@ export default function Home() {
                 showBestMoveArrow={showBestMoveArrow}
                 onMoveMade={handleMoveMade}
                 disabled={isBotThinking}
+                lastMoveCategory={currentStickerCategory}
+                lastMoveToSquare={currentStickerSquare}
+                showStickers={showStickers}
               />
             </div>
           </div>
@@ -632,6 +646,19 @@ export default function Home() {
                 </button>
               </div>
 
+              {/* Sticker Toggle Button */}
+              <button
+                onClick={() => setShowStickers(!showStickers)}
+                className={`p-2.5 rounded-lg border transition-colors cursor-pointer ${
+                  showStickers
+                    ? "bg-zinc-800 text-cyan-300 border-cyan-500/40 shadow-xs"
+                    : "bg-zinc-900 text-zinc-500 border-zinc-800"
+                }`}
+                title={showStickers ? "체스닷컴 스티커 숨기기" : "체스닷컴 스티커 켜기"}
+              >
+                <Tag className="w-4 h-4" />
+              </button>
+
               {/* Flip Board */}
               <button
                 onClick={() => setFlipped(!flipped)}
@@ -664,6 +691,19 @@ export default function Home() {
                 </span>
                 {isBotThinking && (
                   <span className="text-emerald-400 animate-pulse text-[11px] font-medium">(봇 생각 중...)</span>
+                )}
+
+                {/* Active Move Chess.com Sticker Hint */}
+                {showStickers && currentStickerCategory && (
+                  <div className="hidden sm:flex items-center gap-1.5 bg-zinc-950 px-2 py-0.5 rounded-md border border-zinc-800 animate-in fade-in duration-150">
+                    <MoveSticker category={currentStickerCategory} size="xs" />
+                    <span className="font-bold text-zinc-200 capitalize text-[11px]">
+                      {CHESSCOM_STICKER_CONFIG[currentStickerCategory].label}
+                    </span>
+                    <span className="text-[10px] text-zinc-400">
+                      ({CHESSCOM_STICKER_CONFIG[currentStickerCategory].labelKo})
+                    </span>
+                  </div>
                 )}
               </div>
 
@@ -705,6 +745,8 @@ export default function Home() {
               onJumpToMove={handleJumpToMove}
               showBestMoveArrow={showBestMoveArrow}
               onToggleArrow={() => setShowBestMoveArrow(!showBestMoveArrow)}
+              showStickers={showStickers}
+              onToggleStickers={() => setShowStickers(!showStickers)}
               fen={game.fen()}
             />
           </div>

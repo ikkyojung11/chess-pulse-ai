@@ -1,8 +1,10 @@
-// Interactive Chessboard with Best Move Arrow and Move Highlights
+// Interactive Chessboard with Best Move Arrow, Highlights, and Chess.com Style Stickers
 import React, { useState, useRef, useEffect } from "react";
 import { Chess, Square, PieceSymbol, Color, Move } from "chess.js";
 import { ChessPiece } from "./ChessPiece";
 import { PawnPromotionModal } from "./PawnPromotionModal";
+import { MoveSticker, CHESSCOM_STICKER_CONFIG } from "./MoveSticker";
+import { UserMoveCategory } from "@/lib/chess/engine";
 import { soundManager } from "@/lib/audio/sounds";
 
 interface ChessBoardProps {
@@ -12,6 +14,9 @@ interface ChessBoardProps {
   showBestMoveArrow?: boolean;
   onMoveMade: (move: Move, newGame: Chess) => void;
   disabled?: boolean;
+  lastMoveCategory?: UserMoveCategory | null;
+  lastMoveToSquare?: Square | null;
+  showStickers?: boolean;
 }
 
 export const ChessBoard: React.FC<ChessBoardProps> = ({
@@ -21,6 +26,9 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   showBestMoveArrow = true,
   onMoveMade,
   disabled = false,
+  lastMoveCategory = null,
+  lastMoveToSquare = null,
+  showStickers = true,
 }) => {
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [legalDestinations, setLegalDestinations] = useState<Square[]>([]);
@@ -200,8 +208,20 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
             const isSelected = selectedSquare === square;
             const isLegalDest = legalDestinations.includes(square);
             const isLastMoveFrom = lastMove?.from === square;
-            const isLastMoveTo = lastMove?.to === square;
+            const isLastMoveTo = lastMoveToSquare
+              ? lastMoveToSquare === square
+              : lastMove?.to === square;
             const isKingInCheck = inCheckSquare === square;
+
+            // Chess.com style sticker on destination square
+            const isStickerSquare = Boolean(
+              showStickers &&
+              lastMoveCategory &&
+              isLastMoveTo
+            );
+            const stickerConfig = isStickerSquare && lastMoveCategory
+              ? CHESSCOM_STICKER_CONFIG[lastMoveCategory]
+              : null;
 
             // Background color computation
             let bgClass = isLight ? "bg-[#eeeed2]" : "bg-[#769656]";
@@ -245,6 +265,13 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                   <div className="absolute inset-0 bg-radial from-red-600/80 via-red-500/40 to-transparent animate-pulse" />
                 )}
 
+                {/* Chess.com Style Move Quality Square Glow / Tint Overlay */}
+                {stickerConfig && (
+                  <div
+                    className={`absolute inset-0 pointer-events-none z-15 transition-all duration-300 ${stickerConfig.squareGlowColor} ${stickerConfig.squareBorderColor}`}
+                  />
+                )}
+
                 {/* Chess Piece */}
                 {piece && (
                   <div
@@ -253,6 +280,17 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                     className="w-full h-full p-1 z-10 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
                   >
                     <ChessPiece type={piece.type} color={piece.color} />
+                  </div>
+                )}
+
+                {/* Chess.com Authentic Move Sticker Badge */}
+                {isStickerSquare && lastMoveCategory && (
+                  <div className="absolute top-0.5 right-0.5 z-30 pointer-events-auto animate-in zoom-in-50 duration-200">
+                    <MoveSticker
+                      category={lastMoveCategory}
+                      size="md"
+                      showTooltip={true}
+                    />
                   </div>
                 )}
 
@@ -277,7 +315,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       {/* SVG Best Move Arrow Overlay */}
       {bestArrowCoords && (
         <svg
-          className="absolute inset-0 w-full h-full pointer-events-none z-30"
+          className="absolute inset-0 w-full h-full pointer-events-none z-40"
           viewBox="0 0 100 100"
         >
           <defs>
