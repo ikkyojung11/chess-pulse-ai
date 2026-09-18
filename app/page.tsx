@@ -12,7 +12,7 @@ import { GameControls, GameMode, BotDifficulty } from "@/components/chess/GameCo
 import { SavedGamesModal } from "@/components/chess/SavedGamesModal";
 import { soundManager } from "@/lib/audio/sounds";
 import { supabase } from "@/lib/supabase/client";
-import { Flame, Database, ShieldCheck, Trophy, Sparkles } from "lucide-react";
+import { Flame, Database, ShieldCheck, Trophy, Sparkles, Undo2, RotateCcw, Repeat, ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function Home() {
   const [game, setGame] = useState<Chess>(() => new Chess());
@@ -308,33 +308,94 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Game Status Banner */}
-          <div className="w-full max-w-[580px] mt-3 px-2 flex items-center justify-between text-xs text-zinc-400">
-            <div className="flex items-center gap-2">
-              <span
-                className={`w-2.5 h-2.5 rounded-full ${
-                  game.turn() === "w" ? "bg-white border border-zinc-600" : "bg-zinc-900 border border-zinc-500"
-                }`}
-              />
-              <span className="font-semibold text-zinc-200">
-                {game.turn() === "w" ? "White to move" : "Black to move"}
-              </span>
-              {isBotThinking && (
-                <span className="text-emerald-400 animate-pulse text-[11px]">(Bot thinking...)</span>
-              )}
+          {/* Quick Under-Board Control Bar (Mobile & Fast Study Optimized) */}
+          <div className="w-full max-w-[580px] mt-3 p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg flex flex-col gap-2.5">
+            {/* Primary Action Row */}
+            <div className="flex items-center justify-between gap-2">
+              {/* Prominent Take Back Button */}
+              <button
+                onClick={handleUndoMove}
+                disabled={moves.length === 0}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-sm shadow-md shadow-emerald-950/40 disabled:opacity-30 disabled:hover:bg-emerald-600 disabled:active:scale-100 transition-all cursor-pointer"
+                title="한 수 되돌리기 (Take Back)"
+              >
+                <Undo2 className="w-4 h-4 shrink-0" />
+                <span>Take Back (무르기)</span>
+              </button>
+
+              {/* Step Navigation (< >) */}
+              <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
+                <button
+                  onClick={() => handleJumpToMove(Math.max(-1, currentMoveIndex - 1))}
+                  disabled={currentMoveIndex === -1}
+                  className="p-2 rounded-md hover:bg-zinc-800 text-zinc-300 disabled:opacity-25 cursor-pointer transition-colors"
+                  title="이전 수 보기"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleJumpToMove(Math.min(moves.length - 1, currentMoveIndex + 1))}
+                  disabled={currentMoveIndex >= moves.length - 1}
+                  className="p-2 rounded-md hover:bg-zinc-800 text-zinc-300 disabled:opacity-25 cursor-pointer transition-colors"
+                  title="다음 수 보기"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Flip Board */}
+              <button
+                onClick={() => setFlipped(!flipped)}
+                className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition-colors cursor-pointer"
+                title="보드 회전 (Flip Board)"
+              >
+                <Repeat className="w-4 h-4" />
+              </button>
+
+              {/* New Game */}
+              <button
+                onClick={handleNewGame}
+                className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition-colors cursor-pointer"
+                title="새 게임 시작 (New Game)"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
             </div>
 
-            <div>
-              {game.isGameOver() && (
-                <span className="text-amber-400 font-bold flex items-center gap-1">
-                  <Trophy className="w-3.5 h-3.5" />
-                  {game.isCheckmate()
-                    ? `Checkmate! ${game.turn() === "w" ? "Black" : "White"} wins`
-                    : game.isDraw()
-                    ? "Draw!"
-                    : "Game Over"}
+            {/* Status & Live Best Move Hint */}
+            <div className="flex items-center justify-between px-1 text-xs text-zinc-400">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    game.turn() === "w" ? "bg-white border border-zinc-600 shadow-xs" : "bg-zinc-900 border border-zinc-500"
+                  }`}
+                />
+                <span className="font-semibold text-zinc-200">
+                  {game.turn() === "w" ? "White 차례" : "Black 차례"}
                 </span>
-              )}
+                {isBotThinking && (
+                  <span className="text-emerald-400 animate-pulse text-[11px] font-medium">(봇 생각 중...)</span>
+                )}
+              </div>
+
+              <div>
+                {game.isGameOver() ? (
+                  <span className="text-amber-400 font-bold flex items-center gap-1">
+                    <Trophy className="w-3.5 h-3.5" />
+                    {game.isCheckmate()
+                      ? `체크메이트! ${game.turn() === "w" ? "Black" : "White"} 승리`
+                      : game.isDraw()
+                      ? "무승부!"
+                      : "게임 종료"}
+                  </span>
+                ) : (
+                  evaluation && (
+                    <span className="text-zinc-400 font-mono text-[11px]">
+                      추천 수: <strong className="text-emerald-400 font-bold">{evaluation.bestMoveSan || evaluation.bestMoveUci}</strong> ({evaluation.formattedScore})
+                    </span>
+                  )
+                )}
+              </div>
             </div>
           </div>
         </div>
