@@ -68,14 +68,27 @@ export default function Home() {
     });
   }, []);
 
+  // Refs to avoid stale closures and prevent evaluation stream from cancelling bot timer
+  const evaluationRef = useRef<EngineEvaluation | null>(null);
+  evaluationRef.current = evaluation;
+
+  const gameRef = useRef<Chess>(game);
+  gameRef.current = game;
+
+  const movesRef = useRef<Move[]>(moves);
+  movesRef.current = moves;
+
+  const currentMoveIndexRef = useRef<number>(currentMoveIndex);
+  currentMoveIndexRef.current = currentMoveIndex;
+
   // Handle user or bot move
   const handleMoveMade = (move: Move, newGame: Chess) => {
     const prevChance = prevWinChanceRef.current;
-    const turn = game.turn(); // player who made the move
+    const movedColor = newGame.turn() === "w" ? "b" : "w"; // Player who just made the move
 
     // Update game state
     setGame(newGame);
-    const newMoves = [...moves.slice(0, currentMoveIndex + 1), move];
+    const newMoves = [...movesRef.current.slice(0, currentMoveIndexRef.current + 1), move];
     setMoves(newMoves);
     setCurrentMoveIndex(newMoves.length - 1);
 
@@ -85,7 +98,7 @@ export default function Home() {
         setEvaluation(evalData);
 
         // Calculate move quality (Best, Good, Inaccuracy, Blunder)
-        const quality = evaluateMoveQuality(prevChance, evalData.winChance, turn);
+        const quality = evaluateMoveQuality(prevChance, evalData.winChance, movedColor);
         setLastMoveQuality(quality);
         prevWinChanceRef.current = evalData.winChance;
       });
@@ -105,70 +118,85 @@ export default function Home() {
 
   // Bot response effect
   useEffect(() => {
-    if (gameMode === "analysis" || game.isGameOver() || isBotThinking) return;
+    if (gameMode === "analysis" || game.isGameOver()) {
+      setIsBotThinking(false);
+      return;
+    }
 
     const isBotTurn =
       (gameMode === "play_white" && game.turn() === "b") ||
       (gameMode === "play_black" && game.turn() === "w");
 
-    if (isBotTurn) {
-      setIsBotThinking(true);
-      const timer = setTimeout(() => {
-        const legalMoves = game.moves({ verbose: true });
-        if (legalMoves.length === 0) {
-          setIsBotThinking(false);
-          return;
-        }
-
-        let chosenMove: Move | null = null;
-
-        // Pick best move or alternative depending on difficulty
-        const bestUci = evaluation?.bestMoveUci;
-        const bestLegalMove = bestUci
-          ? legalMoves.find(
-              (m) =>
-                m.from === bestUci.slice(0, 2) &&
-                m.to === bestUci.slice(2, 4) &&
-                (!m.promotion || m.promotion === bestUci.slice(4, 5))
-            )
-          : null;
-
-        const rand = Math.random();
-        if (botDifficulty === "hard") {
-          chosenMove = bestLegalMove || legalMoves[Math.floor(Math.random() * legalMoves.length)];
-        } else if (botDifficulty === "medium") {
-          chosenMove = rand < 0.7 && bestLegalMove
-            ? bestLegalMove
-            : legalMoves[Math.floor(Math.random() * legalMoves.length)];
-        } else {
-          // Easy
-          chosenMove = rand < 0.35 && bestLegalMove
-            ? bestLegalMove
-            : legalMoves[Math.floor(Math.random() * legalMoves.length)];
-        }
-
-        if (chosenMove) {
-          const clone = new Chess(game.fen());
-          const executed = clone.move(chosenMove);
-          if (executed) {
-            if (clone.isGameOver()) {
-              soundManager.playVictory();
-            } else if (clone.inCheck()) {
-              soundManager.playCheck();
-            } else if (executed.captured) {
-              soundManager.playCapture();
-            } else {
-              soundManager.playMove();
-            }
-            handleMoveMade(executed, clone);
-          }
-        }
-        setIsBotThinking(false);
-      }, 600);
-
-      return () => clearTimeout(timer);
+    if (!isBotTurn) {
+      setIsBotThinking(false);
+      return;
     }
-  }, [game, gameMode, botDifficulty, evaluation?.bestMoveUci]);
+
+    setIsBotThinking(true);
+
+    const timer = setTimeout(() => {
+      const currentGame = gameRef.current;
+      if (currentGame.isGameOver()) {
+        setIsBotThinking(false);
+        return;
+      }
+
+      const legalMoves = currentGame.moves({ verbose: true });
+      if (legalMoves.length === 0) {
+        setIsBotThinking(false);
+        return;
+      }
+
+      // Pick best move or alternative depending on difficulty
+      const bestUci = evaluationRef.current?.bestMoveUci;
+      const bestLegalMove = bestUci && bestUci.length >= 4
+        ? legalMoves.find(
+            (m) =>
+              m.from === bestUci.slice(0, 2) &&
+              m.to === bestUci.slice(2, 4) &&
+              (!m.promotion || m.promotion === (bestUci.slice(4, 5) || "q"))
+          )
+        : null;
+
+      let chosenMove: Move | null = null;
+      const rand = Math.random();
+
+      if (botDifficulty === "hard") {
+        chosenMove = bestLegalMove || legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      } else if (botDifficulty === "medium") {
+        chosenMove = rand < 0.75 && bestLegalMove
+          ? bestLegalMove
+          : legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      } else {
+        // Easy
+        chosenMove = rand < 0.35 && bestLegalMove
+          ? bestLegalMove
+          : legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      }
+
+      if (chosenMove) {
+        const clone = new Chess(currentGame.fen());
+        const executed = clone.move(chosenMove);
+        if (executed) {
+          if (clone.isGameOver()) {
+            soundManager.playVictory();
+          } else if (clone.inCheck()) {
+            soundManager.playCheck();
+          } else if (executed.captured) {
+            soundManager.playCapture();
+          } else {
+            soundManager.playMove();
+          }
+          handleMoveMade(executed, clone);
+        }
+      }
+      setIsBotThinking(false);
+    }, 600);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [game, gameMode, botDifficulty]);
 
   // Jump to specific move in history
   const handleJumpToMove = (index: number) => {
