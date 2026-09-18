@@ -3,16 +3,40 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Chess, Move } from "chess.js";
 import confetti from "canvas-confetti";
-import { StockfishEngine, EngineEvaluation, MoveQuality, evaluateMoveQuality } from "@/lib/chess/engine";
+import {
+  StockfishEngine,
+  EngineEvaluation,
+  MoveQuality,
+  evaluateMoveQuality,
+  UserMoveCategory,
+  EvaluatedMove,
+  GameReviewStats,
+  evaluate6TierMoveQuality,
+  buildGameReviewStats,
+} from "@/lib/chess/engine";
 import { findOpening, ChessOpening } from "@/lib/chess/openings";
 import { ChessBoard } from "@/components/chess/ChessBoard";
 import { EvalBar } from "@/components/chess/EvalBar";
 import { AnalysisPanel } from "@/components/chess/AnalysisPanel";
 import { GameControls, GameMode, BotDifficulty } from "@/components/chess/GameControls";
 import { SavedGamesModal } from "@/components/chess/SavedGamesModal";
+import { ChesscomImportModal, ChesscomGameItem } from "@/components/chess/ChesscomImportModal";
+import { GameReviewScorecard } from "@/components/chess/GameReviewScorecard";
 import { soundManager } from "@/lib/audio/sounds";
 import { supabase } from "@/lib/supabase/client";
-import { Flame, Database, ShieldCheck, Trophy, Sparkles, Undo2, RotateCcw, Repeat, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Flame,
+  Database,
+  ShieldCheck,
+  Trophy,
+  Sparkles,
+  Undo2,
+  RotateCcw,
+  Repeat,
+  ChevronLeft,
+  ChevronRight,
+  BarChart3,
+} from "lucide-react";
 
 export default function Home() {
   const [game, setGame] = useState<Chess>(() => new Chess());
@@ -24,7 +48,23 @@ export default function Home() {
   const [evaluation, setEvaluation] = useState<EngineEvaluation | null>(null);
   const [showBestMoveArrow, setShowBestMoveArrow] = useState<boolean>(true);
   const [lastMoveQuality, setLastMoveQuality] = useState<MoveQuality | null>(null);
+  const [last6TierCategory, setLast6TierCategory] = useState<UserMoveCategory | null>(null);
   const [opening, setOpening] = useState<ChessOpening | null>(null);
+
+  // 6-Tier Move Quality & Full Game Review State
+  const [evaluatedMoves, setEvaluatedMoves] = useState<EvaluatedMove[]>([]);
+  const [gameReviewStats, setGameReviewStats] = useState<GameReviewStats | null>(null);
+  const [isChesscomModalOpen, setIsChesscomModalOpen] = useState<boolean>(false);
+  const [isScorecardOpen, setIsScorecardOpen] = useState<boolean>(false);
+  const [isAnalyzingFullGame, setIsAnalyzingFullGame] = useState<boolean>(false);
+  const [analysisProgress, setAnalysisProgress] = useState<number>(0);
+  const [gamePlayers, setGamePlayers] = useState<{
+    white: { username: string; rating?: number | string };
+    black: { username: string; rating?: number | string };
+  }>({
+    white: { username: "White" },
+    black: { username: "Black" },
+  });
 
   // Game mode
   const [gameMode, setGameMode] = useState<GameMode>("analysis");
@@ -81,25 +121,64 @@ export default function Home() {
   const currentMoveIndexRef = useRef<number>(currentMoveIndex);
   currentMoveIndexRef.current = currentMoveIndex;
 
+  const evaluatedMovesRef = useRef<EvaluatedMove[]>(evaluatedMoves);
+  evaluatedMovesRef.current = evaluatedMoves;
+
   // Handle user or bot move
   const handleMoveMade = (move: Move, newGame: Chess) => {
     const prevChance = prevWinChanceRef.current;
     const movedColor = newGame.turn() === "w" ? "b" : "w"; // Player who just made the move
+    const prevEvaluated = evaluatedMovesRef.current;
+    const prevMove = prevEvaluated.length > 0 ? prevEvaluated[prevEvaluated.length - 1] : null;
+    const isOpponentError = prevMove
+      ? prevMove.category === "mistake" || prevMove.category === "blunder"
+      : false;
 
     // Update game state
     setGame(newGame);
     const newMoves = [...movesRef.current.slice(0, currentMoveIndexRef.current + 1), move];
     setMoves(newMoves);
-    setCurrentMoveIndex(newMoves.length - 1);
+    const newMoveIdx = newMoves.length - 1;
+    setCurrentMoveIndex(newMoveIdx);
 
     // Run engine analysis on new position
     if (engineRef.current) {
       engineRef.current.analyzePosition(newGame.fen(), 14, (evalData) => {
         setEvaluation(evalData);
 
-        // Calculate move quality (Best, Good, Inaccuracy, Blunder)
+        // 4-tier legacy quality
         const quality = evaluateMoveQuality(prevChance, evalData.winChance, movedColor);
         setLastMoveQuality(quality);
+
+        // 6-tier user quality: excellent, very good, good, mistake, miss, blunder
+        const sixTier = evaluate6TierMoveQuality(
+          prevChance,
+          evalData.winChance,
+          movedColor,
+          isOpponentError
+        );
+        setLast6TierCategory(sixTier);
+
+        const newEvaluatedMove: EvaluatedMove = {
+          index: newMoveIdx,
+          san: move.san,
+          from: move.from,
+          to: move.to,
+          color: movedColor,
+          category: sixTier,
+          winChanceBefore: prevChance,
+          winChanceAfter: evalData.winChance,
+          bestMoveSan: evalData.bestMoveSan,
+          bestMoveUci: evalData.bestMoveUci,
+          evalScore: evalData.formattedScore,
+        };
+
+        setEvaluatedMoves((prev) => {
+          const updated = [...prev.slice(0, newMoveIdx), newEvaluatedMove];
+          setGameReviewStats(buildGameReviewStats(updated));
+          return updated;
+        });
+
         prevWinChanceRef.current = evalData.winChance;
       });
     }
@@ -198,6 +277,72 @@ export default function Home() {
     };
   }, [game, gameMode, botDifficulty]);
 
+  // Full game review batch analysis
+  const startFullGameAnalysis = async (customMoves?: Move[]) => {
+    const movesToAnalyze = customMoves || movesRef.current;
+    if (movesToAnalyze.length === 0 || !engineRef.current) return;
+
+    setIsAnalyzingFullGame(true);
+    setAnalysisProgress(0);
+
+    const tempGame = new Chess();
+    const evaluated: EvaluatedMove[] = [];
+    let currentWinChance = 50;
+
+    // Initial position evaluation
+    try {
+      const initialEval = await engineRef.current.evaluatePositionAsync(tempGame.fen(), 8);
+      currentWinChance = initialEval.winChance;
+    } catch {
+      currentWinChance = 50;
+    }
+
+    for (let i = 0; i < movesToAnalyze.length; i++) {
+      const m = movesToAnalyze[i];
+      const movedColor: "w" | "b" = tempGame.turn();
+      const prevMove = evaluated.length > 0 ? evaluated[evaluated.length - 1] : null;
+      const isOpponentError = prevMove
+        ? prevMove.category === "mistake" || prevMove.category === "blunder"
+        : false;
+
+      tempGame.move(m);
+      const nextFen = tempGame.fen();
+
+      // Quick depth 8 analysis for fast game review (30-50ms per move)
+      const nextEval = await engineRef.current.evaluatePositionAsync(nextFen, 8);
+      const newWinChance = nextEval.winChance;
+
+      const category = evaluate6TierMoveQuality(
+        currentWinChance,
+        newWinChance,
+        movedColor,
+        isOpponentError
+      );
+
+      evaluated.push({
+        index: i,
+        san: m.san,
+        from: m.from,
+        to: m.to,
+        color: movedColor,
+        category,
+        winChanceBefore: currentWinChance,
+        winChanceAfter: newWinChance,
+        bestMoveSan: nextEval.bestMoveSan,
+        bestMoveUci: nextEval.bestMoveUci,
+        evalScore: nextEval.formattedScore,
+      });
+
+      currentWinChance = newWinChance;
+      setAnalysisProgress(Math.round(((i + 1) / movesToAnalyze.length) * 100));
+    }
+
+    setEvaluatedMoves(evaluated);
+    const stats = buildGameReviewStats(evaluated);
+    setGameReviewStats(stats);
+    setIsAnalyzingFullGame(false);
+  };
+
   // Jump to specific move in history
   const handleJumpToMove = (index: number) => {
     setCurrentMoveIndex(index);
@@ -208,6 +353,11 @@ export default function Home() {
       }
     }
     setGame(newGame);
+    if (index >= 0 && evaluatedMoves[index]) {
+      setLast6TierCategory(evaluatedMoves[index].category);
+    } else {
+      setLast6TierCategory(null);
+    }
     runAnalysis(newGame.fen());
   };
 
@@ -218,6 +368,13 @@ export default function Home() {
     setMoves([]);
     setCurrentMoveIndex(-1);
     setLastMoveQuality(null);
+    setLast6TierCategory(null);
+    setEvaluatedMoves([]);
+    setGameReviewStats(null);
+    setGamePlayers({
+      white: { username: "White" },
+      black: { username: "Black" },
+    });
     setOpening(null);
     prevWinChanceRef.current = 50;
     runAnalysis(newGame.fen());
@@ -230,6 +387,11 @@ export default function Home() {
     const targetIdx = Math.max(-1, currentMoveIndex - countToUndo);
     handleJumpToMove(targetIdx);
     setMoves((prev) => prev.slice(0, targetIdx + 1));
+    setEvaluatedMoves((prev) => {
+      const updated = prev.slice(0, targetIdx + 1);
+      setGameReviewStats(buildGameReviewStats(updated));
+      return updated;
+    });
   };
 
   // Import FEN
@@ -240,6 +402,9 @@ export default function Home() {
       setMoves([]);
       setCurrentMoveIndex(-1);
       setLastMoveQuality(null);
+      setLast6TierCategory(null);
+      setEvaluatedMoves([]);
+      setGameReviewStats(null);
       runAnalysis(newGame.fen());
     } catch (e) {
       alert("Invalid FEN string format.");
@@ -252,13 +417,83 @@ export default function Home() {
       const newGame = new Chess();
       newGame.loadPgn(pgn);
       const history = newGame.history({ verbose: true });
+      const headers = newGame.header();
+      setGamePlayers({
+        white: { username: headers["White"] || "White", rating: headers["WhiteElo"] || "" },
+        black: { username: headers["Black"] || "Black", rating: headers["BlackElo"] || "" },
+      });
       setGame(newGame);
       setMoves(history);
       setCurrentMoveIndex(history.length - 1);
       setLastMoveQuality(null);
+      setLast6TierCategory(null);
+      setEvaluatedMoves([]);
+      setGameReviewStats(null);
       runAnalysis(newGame.fen());
     } catch (e) {
       alert("Invalid PGN format.");
+    }
+  };
+
+  // Chess.com 대국 선택 시 자동 로드 및 전체 복기 시작
+  const handleSelectChesscomGame = async (gameItem: ChesscomGameItem) => {
+    try {
+      const newGame = new Chess();
+      newGame.loadPgn(gameItem.pgn);
+      const history = newGame.history({ verbose: true });
+
+      setGamePlayers({
+        white: { username: gameItem.white.username, rating: gameItem.white.rating },
+        black: { username: gameItem.black.username, rating: gameItem.black.rating },
+      });
+
+      setGame(newGame);
+      setMoves(history);
+      setCurrentMoveIndex(history.length - 1);
+      setLastMoveQuality(null);
+      setLast6TierCategory(null);
+      setEvaluatedMoves([]);
+      setGameReviewStats(null);
+      setIsChesscomModalOpen(false);
+      setGameMode("analysis");
+      runAnalysis(newGame.fen());
+
+      // 복기 모달 열고 자동 전체 분석 시작
+      setIsScorecardOpen(true);
+      await startFullGameAnalysis(history);
+    } catch (e) {
+      alert("대국 기보를 불러오는 중 오류가 발생했습니다.");
+    }
+  };
+
+  // 직접 PGN 입력으로 복기 시작
+  const handleDirectPgnImport = async (pgn: string) => {
+    try {
+      const newGame = new Chess();
+      newGame.loadPgn(pgn);
+      const history = newGame.history({ verbose: true });
+      const headers = newGame.header();
+
+      setGamePlayers({
+        white: { username: headers["White"] || "White", rating: headers["WhiteElo"] || "" },
+        black: { username: headers["Black"] || "Black", rating: headers["BlackElo"] || "" },
+      });
+
+      setGame(newGame);
+      setMoves(history);
+      setCurrentMoveIndex(history.length - 1);
+      setLastMoveQuality(null);
+      setLast6TierCategory(null);
+      setEvaluatedMoves([]);
+      setGameReviewStats(null);
+      setIsChesscomModalOpen(false);
+      setGameMode("analysis");
+      runAnalysis(newGame.fen());
+
+      setIsScorecardOpen(true);
+      await startFullGameAnalysis(history);
+    } catch (e) {
+      alert("PGN 형식이 올바르지 않습니다.");
     }
   };
 
@@ -292,6 +527,32 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 text-xs">
+          {/* Chess.com Import Button */}
+          <button
+            onClick={() => setIsChesscomModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#769656] hover:bg-[#68854b] text-white font-bold text-xs shadow-md shadow-emerald-950/40 transition-all cursor-pointer"
+            title="Chess.com 대국 불러오기 및 복기"
+          >
+            <span>♟</span>
+            <span>Chess.com 복기</span>
+          </button>
+
+          {/* Review Scorecard Button (Visible when moves are evaluated) */}
+          {evaluatedMoves.length > 0 && (
+            <button
+              onClick={() => setIsScorecardOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md shadow-cyan-950/40 transition-all cursor-pointer"
+              title="대국 복기 통계표 보기"
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">복기 통계표</span>
+              <span className="sm:hidden">통계</span>
+              <span className="bg-cyan-900/60 text-cyan-200 text-[10px] px-1.5 py-0.2 rounded-full font-mono">
+                {evaluatedMoves.length}
+              </span>
+            </button>
+          )}
+
           <div className="hidden sm:flex items-center gap-1.5 text-zinc-400 bg-zinc-800/60 border border-zinc-700/50 px-2.5 py-1 rounded-full">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Stockfish 10 WASM</span>
@@ -435,6 +696,9 @@ export default function Home() {
             <AnalysisPanel
               evaluation={evaluation}
               lastMoveQuality={lastMoveQuality}
+              last6TierCategory={last6TierCategory}
+              evaluatedMoves={evaluatedMoves}
+              onOpenScorecard={() => setIsScorecardOpen(true)}
               opening={opening}
               moves={moves}
               currentMoveIndex={currentMoveIndex}
@@ -462,6 +726,8 @@ export default function Home() {
             onFlipBoard={() => setFlipped(!flipped)}
             onUndoMove={handleUndoMove}
             onOpenSavedModal={() => setIsSavedModalOpen(true)}
+            onOpenChesscomModal={() => setIsChesscomModalOpen(true)}
+            onOpenScorecard={() => setIsScorecardOpen(true)}
             onImportFen={handleImportFen}
             onImportPgn={handleImportPgn}
             currentFen={game.fen()}
@@ -471,6 +737,30 @@ export default function Home() {
           />
         </div>
       </main>
+
+      {/* Chess.com Import Modal */}
+      <ChesscomImportModal
+        isOpen={isChesscomModalOpen}
+        onClose={() => setIsChesscomModalOpen(false)}
+        onSelectGame={handleSelectChesscomGame}
+        onDirectPgnImport={handleDirectPgnImport}
+      />
+
+      {/* Game Review Scorecard Modal */}
+      <GameReviewScorecard
+        isOpen={isScorecardOpen}
+        onClose={() => setIsScorecardOpen(false)}
+        stats={gameReviewStats}
+        whiteName={gamePlayers.white.username}
+        blackName={gamePlayers.black.username}
+        whiteRating={gamePlayers.white.rating}
+        blackRating={gamePlayers.black.rating}
+        onJumpToMove={handleJumpToMove}
+        isAnalyzingFullGame={isAnalyzingFullGame}
+        analysisProgress={analysisProgress}
+        onStartFullAnalysis={() => startFullGameAnalysis()}
+        totalMovesCount={moves.length}
+      />
 
       {/* Supabase Saved Games Modal */}
       <SavedGamesModal

@@ -18,6 +18,38 @@ export interface EngineEvaluation {
 
 export type MoveQuality = "best" | "excellent" | "good" | "inaccuracy" | "mistake" | "blunder";
 
+// User-specified 6-tier move categorization:
+// "excellent", "very good", "good", "mistake", "miss", "blunder"
+export type UserMoveCategory =
+  | "excellent"
+  | "very good"
+  | "good"
+  | "mistake"
+  | "miss"
+  | "blunder";
+
+export interface EvaluatedMove {
+  index: number;
+  san: string;
+  from: string;
+  to: string;
+  color: "w" | "b";
+  category: UserMoveCategory;
+  winChanceBefore: number;
+  winChanceAfter: number;
+  bestMoveSan?: string;
+  bestMoveUci?: string;
+  evalScore: string;
+}
+
+export interface GameReviewStats {
+  whiteCounts: Record<UserMoveCategory, number>;
+  blackCounts: Record<UserMoveCategory, number>;
+  whiteAccuracy: number;
+  blackAccuracy: number;
+  moves: EvaluatedMove[];
+}
+
 export function cpToWinChance(score: EngineScore, turn: "w" | "b"): number {
   if (score.mate !== undefined) {
     if (score.mate > 0) return turn === "w" ? 100 : 0;
@@ -42,12 +74,116 @@ export function formatScore(score: EngineScore, turn: "w" | "b"): string {
   return whiteCp > 0 ? `+${evalScore}` : evalScore === "-0.0" ? "0.0" : evalScore;
 }
 
+export function evaluate6TierMoveQuality(
+  prevWinChance: number,
+  newWinChance: number,
+  movedColor: "w" | "b",
+  isOpponentMistakeOrBlunder = false
+): UserMoveCategory {
+  const prevChance = movedColor === "w" ? prevWinChance : 100 - prevWinChance;
+  const newChance = movedColor === "w" ? newWinChance : 100 - newWinChance;
+  const drop = prevChance - newChance;
+
+  // 1. Miss: Tactical winning chance missed or failed to punish opponent error
+  if ((prevChance >= 65 && drop >= 20) || (isOpponentMistakeOrBlunder && drop >= 15)) {
+    return "miss";
+  }
+
+  // 2. Blunder: Disastrous drop in win chance
+  if (drop >= 30) {
+    return "blunder";
+  }
+
+  // 3. Mistake: Noticeable error
+  if (drop >= 14) {
+    return "mistake";
+  }
+
+  // 4. Good: Reasonable move with moderate drop
+  if (drop >= 6) {
+    return "good";
+  }
+
+  // 5. Very Good: Strong move with minimal drop
+  if (drop >= 2) {
+    return "very good";
+  }
+
+  // 6. Excellent: Optimal move
+  return "excellent";
+}
+
+export function calculateAccuracy(moves: EvaluatedMove[], color: "w" | "b"): number {
+  const playerMoves = moves.filter((m) => m.color === color);
+  if (playerMoves.length === 0) return 100;
+
+  let total = 0;
+  for (const m of playerMoves) {
+    switch (m.category) {
+      case "excellent":
+        total += 100;
+        break;
+      case "very good":
+        total += 95;
+        break;
+      case "good":
+        total += 80;
+        break;
+      case "mistake":
+        total += 45;
+        break;
+      case "miss":
+        total += 30;
+        break;
+      case "blunder":
+        total += 10;
+        break;
+    }
+  }
+
+  return Math.round((total / playerMoves.length) * 10) / 10;
+}
+
+export function buildGameReviewStats(moves: EvaluatedMove[]): GameReviewStats {
+  const whiteCounts: Record<UserMoveCategory, number> = {
+    excellent: 0,
+    "very good": 0,
+    good: 0,
+    mistake: 0,
+    miss: 0,
+    blunder: 0,
+  };
+  const blackCounts: Record<UserMoveCategory, number> = {
+    excellent: 0,
+    "very good": 0,
+    good: 0,
+    mistake: 0,
+    miss: 0,
+    blunder: 0,
+  };
+
+  for (const m of moves) {
+    if (m.color === "w") {
+      whiteCounts[m.category] = (whiteCounts[m.category] || 0) + 1;
+    } else {
+      blackCounts[m.category] = (blackCounts[m.category] || 0) + 1;
+    }
+  }
+
+  return {
+    whiteCounts,
+    blackCounts,
+    whiteAccuracy: calculateAccuracy(moves, "w"),
+    blackAccuracy: calculateAccuracy(moves, "b"),
+    moves,
+  };
+}
+
 export function evaluateMoveQuality(
   prevWinChance: number,
   newWinChance: number,
   turn: "w" | "b"
 ): MoveQuality {
-  // Win chance from current player's perspective
   const prevChance = turn === "w" ? prevWinChance : 100 - prevWinChance;
   const newChance = turn === "w" ? newWinChance : 100 - newWinChance;
   const drop = prevChance - newChance;
@@ -187,6 +323,41 @@ export class StockfishEngine {
     this.sendCommand("stop");
     this.sendCommand(`position fen ${fen}`);
     this.sendCommand(`go depth ${depth}`);
+  }
+
+  public async evaluatePositionAsync(
+    fen: string,
+    targetDepth = 10
+  ): Promise<EngineEvaluation> {
+    return new Promise((resolve) => {
+      let latest: EngineEvaluation | null = null;
+      let timer: NodeJS.Timeout | null = null;
+
+      const finish = () => {
+        if (timer) clearTimeout(timer);
+        if (latest) {
+          resolve(latest);
+        } else {
+          resolve({
+            depth: 0,
+            score: {},
+            winChance: 50,
+            formattedScore: "0.0",
+            bestMoveUci: "",
+            pv: [],
+          });
+        }
+      };
+
+      timer = setTimeout(finish, 1500);
+
+      this.analyzePosition(fen, targetDepth, (evalData) => {
+        latest = evalData;
+        if (evalData.depth >= targetDepth) {
+          finish();
+        }
+      });
+    });
   }
 
   public stop() {

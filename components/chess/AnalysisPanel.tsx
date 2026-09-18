@@ -1,8 +1,9 @@
 // Real-Time Analysis & Study Panel (Best Move, Move Quality, Eval & Move List)
 import React, { useRef, useEffect } from "react";
 import { Move } from "chess.js";
-import { EngineEvaluation, MoveQuality } from "@/lib/chess/engine";
+import { EngineEvaluation, MoveQuality, UserMoveCategory, EvaluatedMove } from "@/lib/chess/engine";
 import { ChessOpening } from "@/lib/chess/openings";
+import { CATEGORY_CONFIG } from "./GameReviewScorecard";
 import {
   Sparkles,
   TrendingUp,
@@ -16,11 +17,15 @@ import {
   ChevronsRight,
   Copy,
   Check,
+  BarChart3,
 } from "lucide-react";
 
 interface AnalysisPanelProps {
   evaluation: EngineEvaluation | null;
   lastMoveQuality: MoveQuality | null;
+  last6TierCategory?: UserMoveCategory | null;
+  evaluatedMoves?: EvaluatedMove[];
+  onOpenScorecard?: () => void;
   opening: ChessOpening | null;
   moves: Move[];
   currentMoveIndex: number; // -1 for starting position, 0 for move 1, etc.
@@ -33,6 +38,9 @@ interface AnalysisPanelProps {
 export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   evaluation,
   lastMoveQuality,
+  last6TierCategory,
+  evaluatedMoves = [],
+  onOpenScorecard,
   opening,
   moves,
   currentMoveIndex,
@@ -57,49 +65,15 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
     setTimeout(() => setCopiedFen(false), 2000);
   };
 
-  const getQualityBadge = (quality: MoveQuality) => {
-    switch (quality) {
-      case "best":
-        return {
-          label: "Best Move",
-          color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
-          icon: "★",
-        };
-      case "excellent":
-        return {
-          label: "Excellent",
-          color: "bg-teal-500/20 text-teal-400 border-teal-500/40",
-          icon: "✓",
-        };
-      case "good":
-        return {
-          label: "Good",
-          color: "bg-sky-500/20 text-sky-400 border-sky-500/40",
-          icon: "•",
-        };
-      case "inaccuracy":
-        return {
-          label: "Inaccuracy",
-          color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/40",
-          icon: "?!",
-        };
-      case "mistake":
-        return {
-          label: "Mistake",
-          color: "bg-orange-500/20 text-orange-400 border-orange-500/40",
-          icon: "?",
-        };
-      case "blunder":
-        return {
-          label: "Blunder",
-          color: "bg-red-500/20 text-red-400 border-red-500/40",
-          icon: "??",
-        };
-    }
-  };
-
   // Group moves into pairs (White & Black)
-  const movePairs: Array<{ number: number; white?: Move; black?: Move; whiteIdx: number; blackIdx: number }> = [];
+  const movePairs: Array<{
+    number: number;
+    white?: Move;
+    black?: Move;
+    whiteIdx: number;
+    blackIdx: number;
+  }> = [];
+
   for (let i = 0; i < moves.length; i += 2) {
     movePairs.push({
       number: Math.floor(i / 2) + 1,
@@ -113,33 +87,45 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   return (
     <div className="flex flex-col h-full bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl">
       {/* Header with Engine Status & Opening */}
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/80">
+      <div className="p-3.5 border-b border-zinc-800 bg-zinc-900/80">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-xs font-semibold text-zinc-300">Stockfish 10 Engine</span>
+            <span className="text-xs font-semibold text-zinc-300">Stockfish 10</span>
             {evaluation && (
               <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-sm font-mono">
-                Depth {evaluation.depth}
+                D{evaluation.depth}
               </span>
             )}
           </div>
 
-          <button
-            onClick={onToggleArrow}
-            className={`text-xs px-2 py-1 rounded-md flex items-center gap-1.5 transition-colors cursor-pointer border ${
-              showBestMoveArrow
-                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400"
-                : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-zinc-200"
-            }`}
-            title="Toggle Best Move Arrow on Board"
-          >
-            {showBestMoveArrow ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-            <span>{showBestMoveArrow ? "Arrow ON" : "Arrow OFF"}</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onOpenScorecard && (
+              <button
+                onClick={onOpenScorecard}
+                className="text-xs px-2.5 py-1 rounded-md flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25 transition-colors cursor-pointer font-bold"
+                title="Open Game Review Scorecard"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>복기 통계</span>
+              </button>
+            )}
+
+            <button
+              onClick={onToggleArrow}
+              className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors cursor-pointer border ${
+                showBestMoveArrow
+                  ? "bg-zinc-800 border-zinc-700 text-emerald-400"
+                  : "bg-zinc-800/50 border-zinc-800 text-zinc-500"
+              }`}
+              title="Toggle Best Move Arrow on Board"
+            >
+              {showBestMoveArrow ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+            </button>
+          </div>
         </div>
 
         {/* Opening Name */}
@@ -153,10 +139,10 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       </div>
 
       {/* Real-Time Engine Recommendation Card */}
-      <div className="p-4 bg-zinc-950/40 border-b border-zinc-800">
-        <div className="grid grid-cols-2 gap-3 mb-3">
+      <div className="p-3.5 bg-zinc-950/40 border-b border-zinc-800">
+        <div className="grid grid-cols-2 gap-3 mb-2.5">
           {/* Win Rate Card */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5">
             <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
               <span className="flex items-center gap-1">
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
@@ -185,33 +171,36 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
           </div>
 
           {/* Best Move Recommendation Card */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 flex flex-col justify-between">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 flex flex-col justify-between">
             <div className="flex items-center gap-1 text-xs text-zinc-400">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>Recommended Move</span>
             </div>
             <div className="flex items-baseline justify-between mt-1">
-              <span className="text-lg font-black text-emerald-400 font-mono tracking-wide flex items-center gap-1">
-                <ArrowRight className="w-4 h-4 text-emerald-400" />
+              <span className="text-base font-black text-emerald-400 font-mono tracking-wide flex items-center gap-1 truncate">
+                <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 {evaluation?.bestMoveSan || evaluation?.bestMoveUci || "..."}
               </span>
-              <span className="text-xs font-mono font-bold text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded-sm">
+              <span className="text-xs font-mono font-bold text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded-sm shrink-0">
                 {evaluation?.formattedScore || "0.0"}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Move Quality Feedback Banner */}
-        {lastMoveQuality && (
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800">
-            <span className="text-xs text-zinc-400">Last Move Rating:</span>
+        {/* 6-Tier Move Quality Feedback Banner */}
+        {last6TierCategory && (
+          <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800">
+            <span className="text-xs text-zinc-400">직전 수 평가:</span>
             {(() => {
-              const b = getQualityBadge(lastMoveQuality);
+              const conf = CATEGORY_CONFIG[last6TierCategory];
               return (
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 ${b.color}`}>
-                  <span className="font-mono text-[10px]">{b.icon}</span>
-                  {b.label}
+                <span
+                  className={`text-xs font-bold px-2 py-0.5 rounded-md border flex items-center gap-1.5 ${conf.badgeColor} ${conf.textColor} ${conf.borderColor}`}
+                >
+                  <span className="font-mono text-[10px]">{conf.icon}</span>
+                  <span className="capitalize">{conf.label}</span>
+                  <span className="text-[10px] text-zinc-400 font-normal">({conf.labelKo})</span>
                 </span>
               );
             })()}
@@ -219,7 +208,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         )}
       </div>
 
-      {/* Move History Table */}
+      {/* Move History Table with 6-Tier Badges */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="px-4 py-2 bg-zinc-950/20 text-xs font-semibold text-zinc-400 border-b border-zinc-800/60 flex items-center justify-between">
           <span>Notation History</span>
@@ -229,42 +218,65 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
         <div ref={moveListRef} className="flex-1 overflow-y-auto p-2 divide-y divide-zinc-800/30 text-xs font-mono">
           {movePairs.length === 0 ? (
             <div className="text-center text-zinc-500 py-8 text-xs font-sans">
-              Play or move pieces on the board to start analysis
+              체스 말을 움직이거나 Chess.com 대국을 불러와 복기하세요
             </div>
           ) : (
-            movePairs.map((pair) => (
-              <div key={pair.number} className="flex items-center py-1 px-2 hover:bg-zinc-800/40 rounded-sm">
-                <span className="w-10 text-zinc-500 select-none">{pair.number}.</span>
+            movePairs.map((pair) => {
+              const whiteEval = evaluatedMoves[pair.whiteIdx];
+              const blackEval = evaluatedMoves[pair.blackIdx];
+              const whiteConf = whiteEval ? CATEGORY_CONFIG[whiteEval.category] : null;
+              const blackConf = blackEval ? CATEGORY_CONFIG[blackEval.category] : null;
 
-                {/* White move */}
-                <button
-                  onClick={() => onJumpToMove(pair.whiteIdx)}
-                  className={`flex-1 text-left px-2 py-1 rounded-sm cursor-pointer transition-colors ${
-                    currentMoveIndex === pair.whiteIdx
-                      ? "bg-emerald-500/20 text-emerald-300 font-bold"
-                      : "text-zinc-200 hover:bg-zinc-800"
-                  }`}
-                >
-                  {pair.white?.san}
-                </button>
+              return (
+                <div key={pair.number} className="flex items-center py-1 px-1.5 hover:bg-zinc-800/40 rounded-sm">
+                  <span className="w-8 text-zinc-500 select-none">{pair.number}.</span>
 
-                {/* Black move */}
-                {pair.black ? (
+                  {/* White move */}
                   <button
-                    onClick={() => onJumpToMove(pair.blackIdx)}
-                    className={`flex-1 text-left px-2 py-1 rounded-sm cursor-pointer transition-colors ${
-                      currentMoveIndex === pair.blackIdx
+                    onClick={() => onJumpToMove(pair.whiteIdx)}
+                    className={`flex-1 flex items-center justify-between text-left px-2 py-1 rounded-sm cursor-pointer transition-colors ${
+                      currentMoveIndex === pair.whiteIdx
                         ? "bg-emerald-500/20 text-emerald-300 font-bold"
                         : "text-zinc-200 hover:bg-zinc-800"
                     }`}
                   >
-                    {pair.black.san}
+                    <span>{pair.white?.san}</span>
+                    {whiteConf && (
+                      <span
+                        className={`text-[9px] font-bold px-1 py-0.2 rounded-xs border ${whiteConf.badgeColor} ${whiteConf.textColor} ${whiteConf.borderColor}`}
+                        title={`${whiteConf.label} (${whiteConf.labelKo})`}
+                      >
+                        {whiteConf.icon}
+                      </span>
+                    )}
                   </button>
-                ) : (
-                  <span className="flex-1" />
-                )}
-              </div>
-            ))
+
+                  {/* Black move */}
+                  {pair.black ? (
+                    <button
+                      onClick={() => onJumpToMove(pair.blackIdx)}
+                      className={`flex-1 flex items-center justify-between text-left px-2 py-1 rounded-sm cursor-pointer transition-colors ml-1 ${
+                        currentMoveIndex === pair.blackIdx
+                          ? "bg-emerald-500/20 text-emerald-300 font-bold"
+                          : "text-zinc-200 hover:bg-zinc-800"
+                      }`}
+                    >
+                      <span>{pair.black.san}</span>
+                      {blackConf && (
+                        <span
+                          className={`text-[9px] font-bold px-1 py-0.2 rounded-xs border ${blackConf.badgeColor} ${blackConf.textColor} ${blackConf.borderColor}`}
+                          title={`${blackConf.label} (${blackConf.labelKo})`}
+                        >
+                          {blackConf.icon}
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="flex-1 ml-1" />
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 

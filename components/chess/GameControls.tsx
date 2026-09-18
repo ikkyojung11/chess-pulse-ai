@@ -10,6 +10,7 @@ import {
   Compass,
   Download,
   Upload,
+  BarChart3,
 } from "lucide-react";
 import { saveGame } from "@/lib/supabase/client";
 
@@ -25,6 +26,8 @@ interface GameControlsProps {
   onFlipBoard: () => void;
   onUndoMove: () => void;
   onOpenSavedModal: () => void;
+  onOpenChesscomModal: () => void;
+  onOpenScorecard?: () => void;
   onImportFen: (fen: string) => void;
   onImportPgn: (pgn: string) => void;
   currentFen: string;
@@ -42,6 +45,8 @@ export const GameControls: React.FC<GameControlsProps> = ({
   onFlipBoard,
   onUndoMove,
   onOpenSavedModal,
+  onOpenChesscomModal,
+  onOpenScorecard,
   onImportFen,
   onImportPgn,
   currentFen,
@@ -206,6 +211,27 @@ export const GameControls: React.FC<GameControlsProps> = ({
           <FolderArchive className="w-3.5 h-3.5" />
           <span>Saved Sessions</span>
         </button>
+      </div>
+
+      {/* Chess.com Import & Review Actions */}
+      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-800/80">
+        <button
+          onClick={onOpenChesscomModal}
+          className="flex items-center justify-center gap-1.5 bg-[#769656]/20 hover:bg-[#769656]/30 text-emerald-300 border border-[#769656]/50 px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+        >
+          <span className="text-sm">♟</span>
+          <span className="truncate">Chess.com 불러오기</span>
+        </button>
+
+        {onOpenScorecard && (
+          <button
+            onClick={onOpenScorecard}
+            className="flex items-center justify-center gap-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span className="truncate">대국 복기 통계표</span>
+          </button>
+        )}
       </div>
 
       {/* Import / Export Row */}
