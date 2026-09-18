@@ -20,6 +20,8 @@ import {
   Check,
   BarChart3,
   Tag,
+  GitBranch,
+  RotateCcw,
 } from "lucide-react";
 
 interface AnalysisPanelProps {
@@ -36,6 +38,8 @@ interface AnalysisPanelProps {
   onToggleArrow: () => void;
   showStickers?: boolean;
   onToggleStickers?: () => void;
+  isDeviatedFromReview?: boolean;
+  onReturnToReview?: () => void;
   fen: string;
 }
 
@@ -53,6 +57,8 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   onToggleArrow,
   showStickers = true,
   onToggleStickers,
+  isDeviatedFromReview = false,
+  onReturnToReview,
   fen,
 }) => {
   const [copiedFen, setCopiedFen] = React.useState(false);
@@ -228,6 +234,24 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
           </div>
         )}
       </div>
+
+      {/* Deviation / Alternate Line Alert Card */}
+      {isDeviatedFromReview && onReturnToReview && (
+        <div className="p-2.5 bg-amber-500/10 border-b border-amber-500/30 flex items-center justify-between gap-2 animate-in fade-in duration-150">
+          <div className="flex items-center gap-1.5 text-xs text-amber-300 font-semibold min-w-0">
+            <GitBranch className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">대국과 다른 수순 분석 중</span>
+          </div>
+          <button
+            onClick={onReturnToReview}
+            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-[11px] font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer shrink-0"
+            title="원래 복기 수순으로 돌아가기"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>원래 복기로 복귀</span>
+          </button>
+        </div>
+      )}
 
       {/* Move History Table with 6-Tier Badges */}
       <div className="flex-1 flex flex-col min-h-0">

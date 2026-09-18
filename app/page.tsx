@@ -38,6 +38,7 @@ import {
   ChevronRight,
   BarChart3,
   Tag,
+  GitBranch,
 } from "lucide-react";
 
 export default function Home() {
@@ -68,6 +69,12 @@ export default function Home() {
     white: { username: "White" },
     black: { username: "Black" },
   });
+
+  // Review Main Line & Deviation (Branching) State
+  const [reviewMainLineMoves, setReviewMainLineMoves] = useState<Move[]>([]);
+  const [reviewMainLineEvaluations, setReviewMainLineEvaluations] = useState<EvaluatedMove[]>([]);
+  const [isDeviatedFromReview, setIsDeviatedFromReview] = useState<boolean>(false);
+  const [deviationBranchIndex, setDeviationBranchIndex] = useState<number>(-1);
 
   // Game mode
   const [gameMode, setGameMode] = useState<GameMode>("analysis");
@@ -127,6 +134,18 @@ export default function Home() {
   const evaluatedMovesRef = useRef<EvaluatedMove[]>(evaluatedMoves);
   evaluatedMovesRef.current = evaluatedMoves;
 
+  const reviewMainLineMovesRef = useRef<Move[]>(reviewMainLineMoves);
+  reviewMainLineMovesRef.current = reviewMainLineMoves;
+
+  const reviewMainLineEvaluationsRef = useRef<EvaluatedMove[]>(reviewMainLineEvaluations);
+  reviewMainLineEvaluationsRef.current = reviewMainLineEvaluations;
+
+  const isDeviatedFromReviewRef = useRef<boolean>(isDeviatedFromReview);
+  isDeviatedFromReviewRef.current = isDeviatedFromReview;
+
+  const deviationBranchIndexRef = useRef<number>(deviationBranchIndex);
+  deviationBranchIndexRef.current = deviationBranchIndex;
+
   // Handle user or bot move
   const handleMoveMade = (move: Move, newGame: Chess) => {
     const prevChance = prevWinChanceRef.current;
@@ -137,7 +156,58 @@ export default function Home() {
       ? prevMove.category === "mistake" || prevMove.category === "blunder"
       : false;
 
-    // Update game state
+    // Check if we are currently reviewing a loaded game
+    const hasReviewGame = reviewMainLineMovesRef.current.length > 0;
+    const currentIdx = currentMoveIndexRef.current;
+
+    if (hasReviewGame) {
+      const nextExpectedMove = reviewMainLineMovesRef.current[currentIdx + 1];
+
+      if (!isDeviatedFromReviewRef.current) {
+        // Did the user play the move that actually occurred in the reviewed game?
+        const isSameMove =
+          nextExpectedMove &&
+          nextExpectedMove.from === move.from &&
+          nextExpectedMove.to === move.to &&
+          (!nextExpectedMove.promotion || nextExpectedMove.promotion === move.promotion);
+
+        if (isSameMove) {
+          // User played the exact move from the review! Advance along main line.
+          setGame(newGame);
+          const nextIdx = currentIdx + 1;
+          setCurrentMoveIndex(nextIdx);
+
+          // If already pre-evaluated from full review, display its quality and sticker immediately
+          const preEvaluated = reviewMainLineEvaluationsRef.current[nextIdx];
+          if (preEvaluated) {
+            setLast6TierCategory(preEvaluated.category);
+            setLastMoveQuality(
+              evaluateMoveQuality(
+                preEvaluated.winChanceBefore,
+                preEvaluated.winChanceAfter,
+                movedColor
+              )
+            );
+          }
+
+          if (engineRef.current) {
+            engineRef.current.analyzePosition(newGame.fen(), 14, (evalData) => {
+              setEvaluation(evalData);
+              prevWinChanceRef.current = evalData.winChance;
+            });
+          }
+          return;
+        } else {
+          // User played a DIFFERENT move! Enter Deviation / Alternate Line exploration
+          setIsDeviatedFromReview(true);
+          isDeviatedFromReviewRef.current = true;
+          setDeviationBranchIndex(currentIdx);
+          deviationBranchIndexRef.current = currentIdx;
+        }
+      }
+    }
+
+    // Update game state for normal move or deviation move
     setGame(newGame);
     const newMoves = [...movesRef.current.slice(0, currentMoveIndexRef.current + 1), move];
     setMoves(newMoves);
@@ -341,25 +411,79 @@ export default function Home() {
     }
 
     setEvaluatedMoves(evaluated);
+    setReviewMainLineEvaluations(evaluated);
+    reviewMainLineEvaluationsRef.current = evaluated;
     const stats = buildGameReviewStats(evaluated);
     setGameReviewStats(stats);
     setIsAnalyzingFullGame(false);
   };
 
-  // Jump to specific move in history
-  const handleJumpToMove = (index: number) => {
-    setCurrentMoveIndex(index);
+  // Return to original review from deviation (Alternate line)
+  const handleReturnToReview = () => {
+    const mainMoves = reviewMainLineMovesRef.current;
+    const branchIdx = deviationBranchIndexRef.current;
+
+    setIsDeviatedFromReview(false);
+    isDeviatedFromReviewRef.current = false;
+    setDeviationBranchIndex(-1);
+    deviationBranchIndexRef.current = -1;
+
+    setMoves(mainMoves);
+    movesRef.current = mainMoves;
+
+    const mainEvals = reviewMainLineEvaluationsRef.current;
+    if (mainEvals.length > 0) {
+      setEvaluatedMoves(mainEvals);
+      evaluatedMovesRef.current = mainEvals;
+      setGameReviewStats(buildGameReviewStats(mainEvals));
+    }
+
+    const targetIdx = branchIdx;
     const newGame = new Chess();
-    for (let i = 0; i <= index; i++) {
-      if (moves[i]) {
-        newGame.move(moves[i]);
+    for (let i = 0; i <= targetIdx; i++) {
+      if (mainMoves[i]) {
+        newGame.move(mainMoves[i]);
       }
     }
     setGame(newGame);
-    if (index >= 0 && evaluatedMoves[index]) {
-      setLast6TierCategory(evaluatedMoves[index].category);
+    setCurrentMoveIndex(targetIdx);
+    currentMoveIndexRef.current = targetIdx;
+
+    if (targetIdx >= 0 && mainEvals[targetIdx]) {
+      setLast6TierCategory(mainEvals[targetIdx].category);
     } else {
       setLast6TierCategory(null);
+    }
+
+    runAnalysis(newGame.fen());
+  };
+
+  // Jump to specific move in history
+  const handleJumpToMove = (index: number) => {
+    setCurrentMoveIndex(index);
+    currentMoveIndexRef.current = index;
+    const currentMoves = movesRef.current;
+
+    const newGame = new Chess();
+    for (let i = 0; i <= index; i++) {
+      if (currentMoves[i]) {
+        newGame.move(currentMoves[i]);
+      }
+    }
+    setGame(newGame);
+    const evals = evaluatedMovesRef.current;
+    if (index >= 0 && evals[index]) {
+      setLast6TierCategory(evals[index].category);
+      setLastMoveQuality(
+        evaluateMoveQuality(
+          evals[index].winChanceBefore,
+          evals[index].winChanceAfter,
+          evals[index].color
+        )
+      );
+    } else {
+      setLast6TierCategory(null);
+      setLastMoveQuality(null);
     }
     runAnalysis(newGame.fen());
   };
@@ -369,11 +493,22 @@ export default function Home() {
     const newGame = new Chess();
     setGame(newGame);
     setMoves([]);
+    movesRef.current = [];
     setCurrentMoveIndex(-1);
+    currentMoveIndexRef.current = -1;
     setLastMoveQuality(null);
     setLast6TierCategory(null);
     setEvaluatedMoves([]);
+    evaluatedMovesRef.current = [];
     setGameReviewStats(null);
+    setReviewMainLineMoves([]);
+    reviewMainLineMovesRef.current = [];
+    setReviewMainLineEvaluations([]);
+    reviewMainLineEvaluationsRef.current = [];
+    setIsDeviatedFromReview(false);
+    isDeviatedFromReviewRef.current = false;
+    setDeviationBranchIndex(-1);
+    deviationBranchIndexRef.current = -1;
     setGamePlayers({
       white: { username: "White" },
       black: { username: "Black" },
@@ -386,12 +521,21 @@ export default function Home() {
   // Undo move
   const handleUndoMove = () => {
     if (moves.length === 0) return;
+    if (isDeviatedFromReviewRef.current) {
+      const targetIdx = currentMoveIndex - 1;
+      if (targetIdx <= deviationBranchIndexRef.current) {
+        handleReturnToReview();
+        return;
+      }
+    }
     const countToUndo = gameMode === "analysis" ? 1 : 2; // In bot mode, undo bot move + player move
     const targetIdx = Math.max(-1, currentMoveIndex - countToUndo);
     handleJumpToMove(targetIdx);
     setMoves((prev) => prev.slice(0, targetIdx + 1));
+    movesRef.current = movesRef.current.slice(0, targetIdx + 1);
     setEvaluatedMoves((prev) => {
       const updated = prev.slice(0, targetIdx + 1);
+      evaluatedMovesRef.current = updated;
       setGameReviewStats(buildGameReviewStats(updated));
       return updated;
     });
@@ -439,27 +583,51 @@ export default function Home() {
   };
 
   // Chess.com 대국 선택 시 자동 로드 및 전체 복기 시작
-  const handleSelectChesscomGame = async (gameItem: ChesscomGameItem) => {
+  const handleSelectChesscomGame = async (
+    gameItem: ChesscomGameItem,
+    userColor?: "white" | "black"
+  ) => {
     try {
-      const newGame = new Chess();
-      newGame.loadPgn(gameItem.pgn);
-      const history = newGame.history({ verbose: true });
+      const fullGame = new Chess();
+      fullGame.loadPgn(gameItem.pgn);
+      const history = fullGame.history({ verbose: true });
 
       setGamePlayers({
         white: { username: gameItem.white.username, rating: gameItem.white.rating },
         black: { username: gameItem.black.username, rating: gameItem.black.rating },
       });
 
-      setGame(newGame);
+      // 1. 색상 일치: 사용자 플레이어 색상에 맞추어 보드 방향 자동 설정
+      if (userColor === "black") {
+        setFlipped(true);
+      } else if (userColor === "white") {
+        setFlipped(false);
+      }
+
+      // 2. 아예 움직이지 않은 0수 처음 화면으로 시작
+      const startBoard = new Chess();
+      setGame(startBoard);
       setMoves(history);
-      setCurrentMoveIndex(history.length - 1);
+      movesRef.current = history;
+      setCurrentMoveIndex(-1);
+      currentMoveIndexRef.current = -1;
+
+      // 3. 복기 메인 수순 저장 및 분기 상태 초기화
+      setReviewMainLineMoves(history);
+      reviewMainLineMovesRef.current = history;
+      setIsDeviatedFromReview(false);
+      isDeviatedFromReviewRef.current = false;
+      setDeviationBranchIndex(-1);
+      deviationBranchIndexRef.current = -1;
+
       setLastMoveQuality(null);
       setLast6TierCategory(null);
       setEvaluatedMoves([]);
+      evaluatedMovesRef.current = [];
       setGameReviewStats(null);
       setIsChesscomModalOpen(false);
       setGameMode("analysis");
-      runAnalysis(newGame.fen());
+      runAnalysis(startBoard.fen());
 
       // 복기 모달 열고 자동 전체 분석 시작
       setIsScorecardOpen(true);
@@ -472,26 +640,38 @@ export default function Home() {
   // 직접 PGN 입력으로 복기 시작
   const handleDirectPgnImport = async (pgn: string) => {
     try {
-      const newGame = new Chess();
-      newGame.loadPgn(pgn);
-      const history = newGame.history({ verbose: true });
-      const headers = newGame.header();
+      const fullGame = new Chess();
+      fullGame.loadPgn(pgn);
+      const history = fullGame.history({ verbose: true });
+      const headers = fullGame.header();
 
       setGamePlayers({
         white: { username: headers["White"] || "White", rating: headers["WhiteElo"] || "" },
         black: { username: headers["Black"] || "Black", rating: headers["BlackElo"] || "" },
       });
 
-      setGame(newGame);
+      const startBoard = new Chess();
+      setGame(startBoard);
       setMoves(history);
-      setCurrentMoveIndex(history.length - 1);
+      movesRef.current = history;
+      setCurrentMoveIndex(-1);
+      currentMoveIndexRef.current = -1;
+
+      setReviewMainLineMoves(history);
+      reviewMainLineMovesRef.current = history;
+      setIsDeviatedFromReview(false);
+      isDeviatedFromReviewRef.current = false;
+      setDeviationBranchIndex(-1);
+      deviationBranchIndexRef.current = -1;
+
       setLastMoveQuality(null);
       setLast6TierCategory(null);
       setEvaluatedMoves([]);
+      evaluatedMovesRef.current = [];
       setGameReviewStats(null);
       setIsChesscomModalOpen(false);
       setGameMode("analysis");
-      runAnalysis(newGame.fen());
+      runAnalysis(startBoard.fen());
 
       setIsScorecardOpen(true);
       await startFullGameAnalysis(history);
@@ -610,6 +790,24 @@ export default function Home() {
               />
             </div>
           </div>
+
+          {/* Deviation / Alternate Line Alert Banner under Chessboard */}
+          {isDeviatedFromReview && (
+            <div className="w-full max-w-[580px] mt-2 px-3.5 py-2.5 bg-amber-500/15 border border-amber-500/40 rounded-xl flex items-center justify-between gap-2 animate-in fade-in">
+              <div className="flex items-center gap-2 text-xs text-amber-300 font-semibold">
+                <GitBranch className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>대국과 다른 수순(분기) 분석 중입니다</span>
+              </div>
+              <button
+                onClick={handleReturnToReview}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white rounded-lg text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer shrink-0"
+                title="원래 복기 수순으로 돌아가기"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>원래 복기로 복귀</span>
+              </button>
+            </div>
+          )}
 
           {/* Quick Under-Board Control Bar (Mobile & Fast Study Optimized) */}
           <div className="w-full max-w-[580px] mt-3 p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg flex flex-col gap-2.5">
@@ -747,6 +945,8 @@ export default function Home() {
               onToggleArrow={() => setShowBestMoveArrow(!showBestMoveArrow)}
               showStickers={showStickers}
               onToggleStickers={() => setShowStickers(!showStickers)}
+              isDeviatedFromReview={isDeviatedFromReview}
+              onReturnToReview={handleReturnToReview}
               fen={game.fen()}
             />
           </div>
@@ -797,7 +997,12 @@ export default function Home() {
         blackName={gamePlayers.black.username}
         whiteRating={gamePlayers.white.rating}
         blackRating={gamePlayers.black.rating}
-        onJumpToMove={handleJumpToMove}
+        onJumpToMove={(idx) => {
+          if (isDeviatedFromReviewRef.current) {
+            handleReturnToReview();
+          }
+          handleJumpToMove(idx);
+        }}
         isAnalyzingFullGame={isAnalyzingFullGame}
         analysisProgress={analysisProgress}
         onStartFullAnalysis={() => startFullGameAnalysis()}

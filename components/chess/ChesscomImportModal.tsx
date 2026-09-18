@@ -37,7 +37,7 @@ export interface ChesscomGameItem {
 interface ChesscomImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectGame: (game: ChesscomGameItem) => void;
+  onSelectGame: (game: ChesscomGameItem, userColor?: "white" | "black") => void;
   onDirectPgnImport: (pgn: string) => void;
 }
 
@@ -251,7 +251,7 @@ export const ChesscomImportModal: React.FC<ChesscomImportModalProps> = ({
 
                           <button
                             onClick={() => {
-                              onSelectGame(g);
+                              onSelectGame(g, userColor);
                               onClose();
                             }}
                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-md transition-colors cursor-pointer shrink-0"
