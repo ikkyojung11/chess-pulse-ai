@@ -110,6 +110,41 @@ export default function Home() {
     setOpening(matched);
   }, [moves, currentMoveIndex]);
 
+  // Measure chessboard pixel height to synchronize EvalBar height exactly like Chess.com
+  const [boardHeight, setBoardHeight] = useState<number>(0);
+  const boardWrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = boardWrapperRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const h = el.offsetHeight || el.clientHeight;
+      if (h > 0) {
+        setBoardHeight(Math.round(h));
+      }
+    };
+
+    measure();
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const h = entry.borderBoxSize?.[0]?.blockSize || entry.contentRect.height;
+        if (h > 0) {
+          setBoardHeight(Math.round(h));
+        }
+      }
+    });
+
+    ro.observe(el);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
   // Request engine analysis when position changes
   const runAnalysis = useCallback((fen: string, depth = 14) => {
     if (!engineRef.current) return;
@@ -840,16 +875,17 @@ export default function Home() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 items-start justify-center">
         {/* Left / Center: Eval Bar + Chessboard */}
         <div className="w-full lg:w-auto flex flex-col items-center">
-          <div className="flex gap-3 sm:gap-4 w-full max-w-[580px] justify-center items-stretch">
-            {/* Real-time Vertical Evaluation Bar */}
+          <div className="flex gap-2 sm:gap-2.5 w-full max-w-[580px] justify-center items-start">
+            {/* Real-time Vertical Evaluation Bar (Chess.com style) */}
             <EvalBar
               winChance={evaluation?.winChance ?? 50}
               formattedScore={evaluation?.formattedScore ?? "0.0"}
               flipped={flipped}
+              height={boardHeight > 0 ? boardHeight : undefined}
             />
 
             {/* Main Interactive Chessboard */}
-            <div className="flex-1 min-w-0">
+            <div ref={boardWrapperRef} className="flex-1 min-w-0">
               <ChessBoard
                 game={game}
                 flipped={flipped}
