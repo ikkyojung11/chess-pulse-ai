@@ -126,21 +126,6 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               </button>
             )}
 
-            {onToggleStickers && (
-              <button
-                onClick={onToggleStickers}
-                className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors cursor-pointer border ${
-                  showStickers
-                    ? "bg-zinc-800 border-zinc-700 text-cyan-400"
-                    : "bg-zinc-800/50 border-zinc-800 text-zinc-500"
-                }`}
-                title="Chess.com 스티커 표시/숨기기"
-              >
-                <Tag className="w-3.5 h-3.5" />
-                <span className="text-[10px] hidden sm:inline">스티커</span>
-              </button>
-            )}
-
             <button
               onClick={onToggleArrow}
               className={`text-xs px-2 py-1 rounded-md flex items-center gap-1 transition-colors cursor-pointer border ${
@@ -166,53 +151,20 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
       </div>
 
       {/* Real-Time Engine Recommendation Card */}
-      <div className="p-3.5 bg-zinc-950/40 border-b border-zinc-800">
-        <div className="grid grid-cols-2 gap-3 mb-2.5">
-          {/* Win Rate Card */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5">
-            <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-              <span className="flex items-center gap-1">
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                Win Chance
-              </span>
-              <span className="font-mono text-zinc-200 font-bold">
-                {evaluation ? `${evaluation.winChance}%` : "50%"}
-              </span>
-            </div>
-            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden flex">
-              <div
-                className="bg-emerald-400 transition-all duration-300"
-                style={{ width: `${evaluation ? evaluation.winChance : 50}%` }}
-                title="White win probability"
-              />
-              <div
-                className="bg-zinc-600 transition-all duration-300"
-                style={{ width: `${evaluation ? 100 - evaluation.winChance : 50}%` }}
-                title="Black win probability"
-              />
-            </div>
-            <div className="flex justify-between text-[9px] text-zinc-500 mt-1 font-mono">
-              <span>White {evaluation ? evaluation.winChance : 50}%</span>
-              <span>Black {evaluation ? 100 - evaluation.winChance : 50}%</span>
-            </div>
+      <div className="p-3 bg-zinc-950/40 border-b border-zinc-800">
+        {/* Best Move Recommendation Card (Full Width) */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs text-zinc-400 font-medium shrink-0">추천 수:</span>
+            <span className="text-sm sm:text-base font-black text-emerald-400 font-mono tracking-wide flex items-center gap-1 truncate">
+              <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              {evaluation?.bestMoveSan || evaluation?.bestMoveUci || "..."}
+            </span>
           </div>
-
-          {/* Best Move Recommendation Card */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2.5 flex flex-col justify-between">
-            <div className="flex items-center gap-1 text-xs text-zinc-400">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Recommended Move</span>
-            </div>
-            <div className="flex items-baseline justify-between mt-1">
-              <span className="text-base font-black text-emerald-400 font-mono tracking-wide flex items-center gap-1 truncate">
-                <ArrowRight className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                {evaluation?.bestMoveSan || evaluation?.bestMoveUci || "..."}
-              </span>
-              <span className="text-xs font-mono font-bold text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded-sm shrink-0">
-                {evaluation?.formattedScore || "0.0"}
-              </span>
-            </div>
-          </div>
+          <span className="text-xs font-mono font-bold text-zinc-300 bg-zinc-800 px-2 py-1 rounded-md border border-zinc-700/60 shrink-0">
+            {evaluation?.formattedScore || "0.0"}
+          </span>
         </div>
 
         {/* 6-Tier Move Quality Feedback Banner */}

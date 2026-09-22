@@ -177,7 +177,7 @@ export default function Home() {
           const nextIdx = currentIdx + 1;
           setCurrentMoveIndex(nextIdx);
 
-          // If already pre-evaluated from full review, display its quality and sticker immediately
+          // If already pre-evaluated from full review, display its quality, sticker, and eval bar immediately
           const preEvaluated = reviewMainLineEvaluationsRef.current[nextIdx];
           if (preEvaluated) {
             setLast6TierCategory(preEvaluated.category);
@@ -188,6 +188,16 @@ export default function Home() {
                 movedColor
               )
             );
+            setEvaluation({
+              depth: 14,
+              score: {},
+              winChance: preEvaluated.winChanceAfter,
+              formattedScore: preEvaluated.evalScore,
+              bestMoveUci: preEvaluated.bestMoveUci || "",
+              bestMoveSan: preEvaluated.bestMoveSan,
+              pv: [],
+            });
+            prevWinChanceRef.current = preEvaluated.winChanceAfter;
           }
 
           if (engineRef.current) {
@@ -451,8 +461,35 @@ export default function Home() {
 
     if (targetIdx >= 0 && mainEvals[targetIdx]) {
       setLast6TierCategory(mainEvals[targetIdx].category);
+      setLastMoveQuality(
+        evaluateMoveQuality(
+          mainEvals[targetIdx].winChanceBefore,
+          mainEvals[targetIdx].winChanceAfter,
+          mainEvals[targetIdx].color
+        )
+      );
+      setEvaluation({
+        depth: 14,
+        score: {},
+        winChance: mainEvals[targetIdx].winChanceAfter,
+        formattedScore: mainEvals[targetIdx].evalScore,
+        bestMoveUci: mainEvals[targetIdx].bestMoveUci || "",
+        bestMoveSan: mainEvals[targetIdx].bestMoveSan,
+        pv: [],
+      });
+      prevWinChanceRef.current = mainEvals[targetIdx].winChanceAfter;
     } else {
       setLast6TierCategory(null);
+      setLastMoveQuality(null);
+      setEvaluation({
+        depth: 14,
+        score: {},
+        winChance: 50,
+        formattedScore: "0.0",
+        bestMoveUci: "",
+        pv: [],
+      });
+      prevWinChanceRef.current = 50;
     }
 
     runAnalysis(newGame.fen());
@@ -481,6 +518,28 @@ export default function Home() {
           evals[index].color
         )
       );
+      setEvaluation({
+        depth: 14,
+        score: {},
+        winChance: evals[index].winChanceAfter,
+        formattedScore: evals[index].evalScore,
+        bestMoveUci: evals[index].bestMoveUci || "",
+        bestMoveSan: evals[index].bestMoveSan,
+        pv: [],
+      });
+      prevWinChanceRef.current = evals[index].winChanceAfter;
+    } else if (index === -1) {
+      setLast6TierCategory(null);
+      setLastMoveQuality(null);
+      setEvaluation({
+        depth: 14,
+        score: {},
+        winChance: 50,
+        formattedScore: "0.0",
+        bestMoveUci: "",
+        pv: [],
+      });
+      prevWinChanceRef.current = 50;
     } else {
       setLast6TierCategory(null);
       setLastMoveQuality(null);
@@ -515,6 +574,14 @@ export default function Home() {
     });
     setOpening(null);
     prevWinChanceRef.current = 50;
+    setEvaluation({
+      depth: 14,
+      score: {},
+      winChance: 50,
+      formattedScore: "0.0",
+      bestMoveUci: "",
+      pv: [],
+    });
     runAnalysis(newGame.fen());
   };
 
@@ -625,6 +692,15 @@ export default function Home() {
       setEvaluatedMoves([]);
       evaluatedMovesRef.current = [];
       setGameReviewStats(null);
+      setEvaluation({
+        depth: 14,
+        score: {},
+        winChance: 50,
+        formattedScore: "0.0",
+        bestMoveUci: "",
+        pv: [],
+      });
+      prevWinChanceRef.current = 50;
       setIsChesscomModalOpen(false);
       setGameMode("analysis");
       runAnalysis(startBoard.fen());
@@ -669,6 +745,15 @@ export default function Home() {
       setEvaluatedMoves([]);
       evaluatedMovesRef.current = [];
       setGameReviewStats(null);
+      setEvaluation({
+        depth: 14,
+        score: {},
+        winChance: 50,
+        formattedScore: "0.0",
+        bestMoveUci: "",
+        pv: [],
+      });
+      prevWinChanceRef.current = 50;
       setIsChesscomModalOpen(false);
       setGameMode("analysis");
       runAnalysis(startBoard.fen());
@@ -748,18 +833,6 @@ export default function Home() {
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Stockfish 10 WASM</span>
           </div>
-
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] ${
-              supabase
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                : "bg-zinc-800/60 border-zinc-700/50 text-zinc-400"
-            }`}
-            title={supabase ? "Connected to Supabase" : "Using Local Storage (Supabase ready)"}
-          >
-            <Database className="w-3 h-3" />
-            <span>{supabase ? "Supabase Connected" : "Local / Supabase Ready"}</span>
-          </div>
         </div>
       </header>
 
@@ -812,55 +885,42 @@ export default function Home() {
           {/* Quick Under-Board Control Bar (Mobile & Fast Study Optimized) */}
           <div className="w-full max-w-[580px] mt-3 p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl shadow-lg flex flex-col gap-2.5">
             {/* Primary Action Row */}
-            <div className="flex items-center justify-between gap-2">
-              {/* Prominent Take Back Button */}
+            <div className="flex items-center gap-2">
+              {/* Previous Move (<) - Equal size to Take Back */}
+              <button
+                onClick={() => handleJumpToMove(Math.max(-1, currentMoveIndex - 1))}
+                disabled={currentMoveIndex === -1}
+                className="flex-1 h-[42px] flex items-center justify-center py-2.5 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 hover:text-white font-bold text-sm border border-zinc-700/60 disabled:opacity-30 disabled:hover:bg-zinc-800 disabled:active:scale-100 transition-all cursor-pointer shadow-xs"
+                title="이전 수 보기"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+
+              {/* Next Move (>) - Equal size to Take Back */}
+              <button
+                onClick={() => handleJumpToMove(Math.min(moves.length - 1, currentMoveIndex + 1))}
+                disabled={currentMoveIndex >= moves.length - 1}
+                className="flex-1 h-[42px] flex items-center justify-center py-2.5 px-3 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:scale-98 text-zinc-200 hover:text-white font-bold text-sm border border-zinc-700/60 disabled:opacity-30 disabled:hover:bg-zinc-800 disabled:active:scale-100 transition-all cursor-pointer shadow-xs"
+                title="다음 수 보기"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+
+              {/* Prominent Take Back Button (무르기) - Equal size */}
               <button
                 onClick={handleUndoMove}
                 disabled={moves.length === 0}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-sm shadow-md shadow-emerald-950/40 disabled:opacity-30 disabled:hover:bg-emerald-600 disabled:active:scale-100 transition-all cursor-pointer"
+                className="flex-1 h-[42px] flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-bold text-sm shadow-md shadow-emerald-950/40 disabled:opacity-30 disabled:hover:bg-emerald-600 disabled:active:scale-100 transition-all cursor-pointer"
                 title="한 수 되돌리기 (Take Back)"
               >
                 <Undo2 className="w-4 h-4 shrink-0" />
-                <span>Take Back (무르기)</span>
-              </button>
-
-              {/* Step Navigation (< >) */}
-              <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-                <button
-                  onClick={() => handleJumpToMove(Math.max(-1, currentMoveIndex - 1))}
-                  disabled={currentMoveIndex === -1}
-                  className="p-2 rounded-md hover:bg-zinc-800 text-zinc-300 disabled:opacity-25 cursor-pointer transition-colors"
-                  title="이전 수 보기"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleJumpToMove(Math.min(moves.length - 1, currentMoveIndex + 1))}
-                  disabled={currentMoveIndex >= moves.length - 1}
-                  className="p-2 rounded-md hover:bg-zinc-800 text-zinc-300 disabled:opacity-25 cursor-pointer transition-colors"
-                  title="다음 수 보기"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Sticker Toggle Button */}
-              <button
-                onClick={() => setShowStickers(!showStickers)}
-                className={`p-2.5 rounded-lg border transition-colors cursor-pointer ${
-                  showStickers
-                    ? "bg-zinc-800 text-cyan-300 border-cyan-500/40 shadow-xs"
-                    : "bg-zinc-900 text-zinc-500 border-zinc-800"
-                }`}
-                title={showStickers ? "체스닷컴 스티커 숨기기" : "체스닷컴 스티커 켜기"}
-              >
-                <Tag className="w-4 h-4" />
+                <span>무르기</span>
               </button>
 
               {/* Flip Board */}
               <button
                 onClick={() => setFlipped(!flipped)}
-                className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition-colors cursor-pointer"
+                className="h-[42px] w-[42px] flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition-colors cursor-pointer shrink-0"
                 title="보드 회전 (Flip Board)"
               >
                 <Repeat className="w-4 h-4" />
@@ -869,7 +929,7 @@ export default function Home() {
               {/* New Game */}
               <button
                 onClick={handleNewGame}
-                className="p-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition-colors cursor-pointer"
+                className="h-[42px] w-[42px] flex items-center justify-center rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700/60 transition-colors cursor-pointer shrink-0"
                 title="새 게임 시작 (New Game)"
               >
                 <RotateCcw className="w-4 h-4" />

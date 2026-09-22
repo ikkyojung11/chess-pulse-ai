@@ -15,51 +15,59 @@ export const EvalBar: React.FC<EvalBarProps> = ({
   className = "",
 }) => {
   // winChance is White's percentage (0 to 100)
-  // Ensure within reasonable bounds
-  const clamped = Math.max(2, Math.min(98, winChance));
+  // Clamp between 3% and 97% for visual clarity so neither side completely vanishes
+  const clamped = Math.max(3, Math.min(97, Math.round(winChance)));
 
-  // If flipped is true (Black perspective):
-  // Black is at bottom, White is at top
-  // White height is clamped%
-  const whiteHeightPercent = flipped ? 100 - clamped : clamped;
+  const whiteHeightPercent = clamped;
+  const blackHeightPercent = 100 - clamped;
 
-  const isWhiteAdvantage = formattedScore.startsWith("+") || (formattedScore.startsWith("M") && !formattedScore.startsWith("-M"));
+  const isWhiteAdvantage =
+    formattedScore.startsWith("+") ||
+    (formattedScore.startsWith("M") && !formattedScore.startsWith("-M"));
   const isBlackAdvantage = formattedScore.startsWith("-");
+
+  // Win rate of player currently positioned at the bottom of the board
+  const bottomPlayerWinRate = flipped ? blackHeightPercent : whiteHeightPercent;
 
   return (
     <div
-      className={`relative flex flex-col justify-between w-8 h-full min-h-[360px] bg-zinc-900 rounded-md overflow-hidden border border-zinc-700/80 select-none shadow-lg ${className}`}
-      title={`Evaluation: ${formattedScore} (White win chance: ${winChance}%)`}
+      className={`relative flex ${
+        flipped ? "flex-col-reverse" : "flex-col"
+      } justify-between w-7 sm:w-8 h-full bg-zinc-950 rounded-lg overflow-hidden border border-zinc-700/80 select-none shadow-xl shrink-0 ${className}`}
+      title={`평가치: ${formattedScore} (백 승률: ${winChance}%, 흑 승률: ${100 - winChance}%)`}
     >
-      {/* Black portion (top or bottom depending on flipped) */}
+      {/* Black portion */}
       <div
-        className="w-full bg-[#302e2b] transition-all duration-300 ease-out flex items-center justify-center relative"
-        style={{ height: `${100 - whiteHeightPercent}%` }}
+        className="w-full bg-[#262522] transition-[height] duration-500 ease-out flex items-center justify-center relative overflow-hidden"
+        style={{ height: `${blackHeightPercent}%` }}
       >
-        {/* If Black has advantage and black section is large enough, show score here */}
-        {(isBlackAdvantage || (!isWhiteAdvantage && whiteHeightPercent < 45)) && (
-          <span className="text-[11px] font-bold text-zinc-100 px-0.5 tracking-tighter">
+        {/* Score in Black portion if Black has advantage or enough room */}
+        {(isBlackAdvantage || blackHeightPercent >= 55) && (
+          <span className="text-[11px] font-black text-white px-0.5 tracking-tighter drop-shadow-sm font-mono select-none">
             {formattedScore.replace("+", "")}
           </span>
         )}
       </div>
 
+      {/* 50% Equality Midpoint Tick Marker */}
+      <div className="absolute top-1/2 left-0 right-0 h-[1.5px] bg-amber-400/70 -translate-y-1/2 z-10 pointer-events-none shadow-xs" />
+
       {/* White portion */}
       <div
-        className="w-full bg-[#f1f1f1] transition-all duration-300 ease-out flex items-center justify-center relative shadow-inner"
+        className="w-full bg-[#ffffff] transition-[height] duration-500 ease-out flex items-center justify-center relative shadow-inner overflow-hidden"
         style={{ height: `${whiteHeightPercent}%` }}
       >
-        {/* If White has advantage or neutral, show score in white section */}
-        {(isWhiteAdvantage || (!isBlackAdvantage && whiteHeightPercent >= 45)) && (
-          <span className="text-[11px] font-bold text-zinc-900 px-0.5 tracking-tighter">
+        {/* Score in White portion if White has advantage or enough room */}
+        {(isWhiteAdvantage || (!isBlackAdvantage && whiteHeightPercent >= 55)) && (
+          <span className="text-[11px] font-black text-zinc-900 px-0.5 tracking-tighter font-mono select-none">
             {formattedScore}
           </span>
         )}
       </div>
 
-      {/* Percentage pill at corner */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[9px] font-mono text-zinc-400/80 bg-zinc-950/70 px-1 rounded-xs pointer-events-none">
-        {flipped ? 100 - winChance : winChance}%
+      {/* Bottom perspective win chance badge */}
+      <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] font-mono font-bold text-zinc-300 bg-zinc-950/85 px-1 py-0.2 rounded-xs border border-zinc-800 pointer-events-none z-20">
+        {bottomPlayerWinRate}%
       </div>
     </div>
   );
