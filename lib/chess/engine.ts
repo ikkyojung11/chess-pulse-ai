@@ -54,7 +54,8 @@ export function cpToWinChance(score: EngineScore, turn: "w" | "b"): number {
   if (score.mate !== undefined) {
     if (score.mate > 0) return turn === "w" ? 100 : 0;
     if (score.mate < 0) return turn === "w" ? 0 : 100;
-    return 50;
+    // score.mate === 0: the player whose turn it is is checkmated
+    return turn === "b" ? 100 : 0;
   }
   const cp = score.cp ?? 0;
   const whiteCp = turn === "w" ? cp : -cp;
@@ -65,6 +66,9 @@ export function cpToWinChance(score: EngineScore, turn: "w" | "b"): number {
 
 export function formatScore(score: EngineScore, turn: "w" | "b"): string {
   if (score.mate !== undefined) {
+    if (score.mate === 0) {
+      return turn === "b" ? "+M0" : "-M0";
+    }
     const whiteMate = turn === "w" ? score.mate : -score.mate;
     return whiteMate > 0 ? `M${whiteMate}` : `-M${Math.abs(whiteMate)}`;
   }
@@ -78,8 +82,14 @@ export function evaluate6TierMoveQuality(
   prevWinChance: number,
   newWinChance: number,
   movedColor: "w" | "b",
-  isOpponentMistakeOrBlunder = false
+  isOpponentMistakeOrBlunder = false,
+  isCheckmate = false
 ): UserMoveCategory {
+  // Checkmate is always an optimal winning move
+  if (isCheckmate) {
+    return "excellent";
+  }
+
   const prevChance = movedColor === "w" ? prevWinChance : 100 - prevWinChance;
   const newChance = movedColor === "w" ? newWinChance : 100 - newWinChance;
   const drop = prevChance - newChance;
@@ -329,6 +339,37 @@ export class StockfishEngine {
     fen: string,
     targetDepth = 10
   ): Promise<EngineEvaluation> {
+    try {
+      const temp = new Chess(fen);
+      if (temp.isGameOver()) {
+        if (temp.isCheckmate()) {
+          const turn = temp.turn();
+          const winChance = turn === "b" ? 100 : 0;
+          return {
+            depth: 1,
+            score: { mate: 0 },
+            winChance,
+            formattedScore: turn === "b" ? "+M0" : "-M0",
+            bestMoveUci: "",
+            bestMoveSan: "#",
+            pv: [],
+          };
+        } else if (temp.isDraw()) {
+          return {
+            depth: 1,
+            score: { cp: 0 },
+            winChance: 50,
+            formattedScore: "0.0",
+            bestMoveUci: "",
+            bestMoveSan: "½-½",
+            pv: [],
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return new Promise((resolve) => {
       let latest: EngineEvaluation | null = null;
       let timer: NodeJS.Timeout | null = null;

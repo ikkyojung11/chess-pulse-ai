@@ -259,8 +259,47 @@ export default function Home() {
     const newMoveIdx = newMoves.length - 1;
     setCurrentMoveIndex(newMoveIdx);
 
-    // Run engine analysis on new position
-    if (engineRef.current) {
+    // Check if move delivered checkmate
+    const isCheckmate = newGame.isCheckmate();
+
+    if (isCheckmate) {
+      const mateWinChance = movedColor === "w" ? 100 : 0;
+      const mateEval: EngineEvaluation = {
+        depth: 1,
+        score: { mate: 0 },
+        winChance: mateWinChance,
+        formattedScore: movedColor === "w" ? "+M0" : "-M0",
+        bestMoveUci: "",
+        bestMoveSan: "#",
+        pv: [],
+      };
+      setEvaluation(mateEval);
+      setLastMoveQuality("best");
+      setLast6TierCategory("excellent");
+
+      const newEvaluatedMove: EvaluatedMove = {
+        index: newMoveIdx,
+        san: move.san,
+        from: move.from,
+        to: move.to,
+        color: movedColor,
+        category: "excellent",
+        winChanceBefore: prevChance,
+        winChanceAfter: mateWinChance,
+        bestMoveSan: "#",
+        bestMoveUci: "",
+        evalScore: movedColor === "w" ? "+M0" : "-M0",
+      };
+
+      setEvaluatedMoves((prev) => {
+        const updated = [...prev.slice(0, newMoveIdx), newEvaluatedMove];
+        setGameReviewStats(buildGameReviewStats(updated));
+        return updated;
+      });
+
+      prevWinChanceRef.current = mateWinChance;
+    } else if (engineRef.current) {
+      // Run engine analysis on new position
       engineRef.current.analyzePosition(newGame.fen(), 14, (evalData) => {
         setEvaluation(evalData);
 
@@ -424,18 +463,37 @@ export default function Home() {
         : false;
 
       tempGame.move(m);
+      const isCheckmate = tempGame.isCheckmate();
       const nextFen = tempGame.fen();
 
-      // Quick depth 8 analysis for fast game review (30-50ms per move)
-      const nextEval = await engineRef.current.evaluatePositionAsync(nextFen, 8);
+      let nextEval: EngineEvaluation;
+      if (isCheckmate) {
+        const mateWinChance = movedColor === "w" ? 100 : 0;
+        nextEval = {
+          depth: 1,
+          score: { mate: 0 },
+          winChance: mateWinChance,
+          formattedScore: movedColor === "w" ? "+M0" : "-M0",
+          bestMoveUci: "",
+          bestMoveSan: "#",
+          pv: [],
+        };
+      } else {
+        // Quick depth 8 analysis for fast game review (30-50ms per move)
+        nextEval = await engineRef.current.evaluatePositionAsync(nextFen, 8);
+      }
+
       const newWinChance = nextEval.winChance;
 
-      const category = evaluate6TierMoveQuality(
-        currentWinChance,
-        newWinChance,
-        movedColor,
-        isOpponentError
-      );
+      const category = isCheckmate
+        ? "excellent"
+        : evaluate6TierMoveQuality(
+            currentWinChance,
+            newWinChance,
+            movedColor,
+            isOpponentError,
+            isCheckmate
+          );
 
       evaluated.push({
         index: i,
@@ -446,7 +504,7 @@ export default function Home() {
         category,
         winChanceBefore: currentWinChance,
         winChanceAfter: newWinChance,
-        bestMoveSan: nextEval.bestMoveSan,
+        bestMoveSan: isCheckmate ? "#" : nextEval.bestMoveSan,
         bestMoveUci: nextEval.bestMoveUci,
         evalScore: nextEval.formattedScore,
       });
